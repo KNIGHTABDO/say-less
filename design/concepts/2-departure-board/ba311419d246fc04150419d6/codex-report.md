@@ -1,0 +1,1 @@
+Saved as `output-1.png`.

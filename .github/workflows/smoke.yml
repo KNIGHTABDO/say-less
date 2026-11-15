@@ -1,0 +1,69 @@
+# Real-model smoke test of the engine on the macOS runner (CPU): STT → MT end to end.
+# Runs only when the engine package changes (macOS minutes are expensive on a private repo), or by hand.
+name: Engine smoke
+
+on:
+  push:
+    branches: ['**']
+    paths: ['Packages/**', '.github/workflows/smoke.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      WHISPER_VARIANT: openai_whisper-base
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select newest Xcode
+        run: |
+          XC=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          [ -n "$XC" ] && sudo xcode-select -s "$XC"
+          xcodebuild -version | head -1
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/models
+          key: models-v1
+
+      - name: Fetch translation models
+        run: |
+          mkdir -p ~/models
+          fetch() { [ -s ~/models/$2 ] || curl -fL --retry 3 -s -o ~/models/$2 "$1" || { echo "::warning::could not fetch $2"; rm -f ~/models/$2; }; }
+          fetch https://huggingface.co/tencent/Hy-MT2-1.8B-GGUF/resolve/main/Hy-MT2-1.8B-Q4_K_M.gguf Hy-MT2-1.8B-Q4_K_M.gguf
+          fetch https://huggingface.co/tencent/HY-MT1.5-1.8B-GGUF/resolve/main/HY-MT1.5-1.8B-Q4_K_M.gguf HY-MT1.5-1.8B-Q4_K_M.gguf
+          ls -l ~/models
+
+      - name: Make test audio
+        run: |
+          say -o /tmp/q.aiff "Excuse me, where is the train station?"
+          afconvert -f WAVE -d LEI16@16000 -c 1 /tmp/q.aiff /tmp/q.wav
+          ls -l /tmp/q.wav
+
+      - uses: actions/cache@v4
+        with:
+          path: Packages/SayLessEngine/.build
+          key: swiftpm-${{ hashFiles('Packages/SayLessEngine/Package.swift', 'Packages/SayLessEngine/Package.resolved') }}
+
+      - name: Build smoke
+        working-directory: Packages/SayLessEngine
+        run: |
+          set -o pipefail
+          swift build -c release --product smoke > build.log 2>&1 \
+            || { grep -E "error:" build.log | sort -u | head -60; tail -30 build.log; exit 1; }
+          echo "BUILD OK"
+
+      - name: Run smoke
+        working-directory: Packages/SayLessEngine
+        run: |
+          MODELS=$(ls ~/models/*.gguf 2>/dev/null | sort -r)   # Hy-MT2 before HY-MT1.5
+          rc=0
+          .build/release/smoke /tmp/q.wav $MODELS > smoke.log 2>&1 || rc=$?
+          grep -vE "^(llama_|load|print_info|ggml_|graph_|sched_|common_|\.+$)" smoke.log | head -200
+          exit $rc

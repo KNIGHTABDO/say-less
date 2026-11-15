@@ -1,0 +1,56 @@
+name: SayLess
+options:
+  bundleIdPrefix: com.knightabdo
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    CODE_SIGN_STYLE: Manual
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1"
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+packages:
+  SayLessEngine:
+    path: Packages/SayLessEngine
+targets:
+  SayLess:
+    type: application
+    platform: iOS
+    sources:
+      - path: SayLess
+    dependencies:
+      - package: SayLessEngine
+        product: SayLessEngine
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.knightabdo.sayless
+        PRODUCT_NAME: SayLess
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+    info:
+      path: SayLess/Info.plist
+      properties:
+        CFBundleDisplayName: Say Less
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSRequiresIPhoneOS: true
+        ITSAppUsesNonExemptEncryption: false
+        UILaunchScreen: {}
+        UIApplicationSupportsIndirectInputEvents: true
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSMicrophoneUsageDescription: Say Less listens only while you hold the button, and the audio never leaves your iPhone.
+        UIBackgroundModes: [audio]
+        LSApplicationQueriesSchemes: [sidestore]
+schemes:
+  SayLess:
+    build:
+      targets:
+        SayLess: all
+    run:
+      config: Debug
+    archive:
+      config: Release

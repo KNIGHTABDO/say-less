@@ -1,0 +1,10 @@
+.gemini-tasks/
+build/
+*.xcodeproj/
+.build/
+.swiftpm/
+DerivedData/
+Payload/
+*.ipa
+.DS_Store
+concepts/*.tmp
