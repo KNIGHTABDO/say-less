@@ -107,7 +107,50 @@ public struct InstalledManifest: Codable, Sendable {
         if let data = try? JSONEncoder().encode(self) { try? data.write(to: EnginePaths.manifest, options: .atomic) }
     }
 
-    public var hasSpeech: Bool { whisperFolder.map { FileManager.default.fileExists(atPath: $0) } ?? false }
-    public var hasTranslation: Bool { translationFile.map { FileManager.default.fileExists(atPath: $0) } ?? false }
-    public var hasVoice: Bool { voiceFolder.map { FileManager.default.fileExists(atPath: $0) } ?? false }
+    // Paths are stored relative to `EnginePaths.root`. iOS moves the app's data container on every
+    // update/reinstall, so an absolute path from an older build points at a folder that no longer exists.
+    public var whisperPath: String? { Self.resolve(whisperFolder) ?? Self.scan(EnginePaths.whisperBase, dirNamed: ModelRegistry.bundled.speech.variant) }
+    public var translationPath: String? {
+        Self.resolve(translationFile) ?? ModelRegistry.bundled.translation.lazy
+            .map { EnginePaths.gguf.appending(path: $0.url.lastPathComponent).path }
+            .first { FileManager.default.fileExists(atPath: $0) }
+    }
+    public var voicePath: String? { Self.resolve(voiceFolder) }
+
+    public var hasSpeech: Bool { whisperPath != nil }
+    public var hasTranslation: Bool { translationPath != nil }
+    public var hasVoice: Bool { voicePath != nil }
+
+    /// Path to store for a file or folder under the root (relative when possible).
+    public static func store(_ url: URL) -> String { relative(url.path, root: EnginePaths.root.path) }
+
+    static func relative(_ path: String, root: String) -> String {
+        let r = root.hasSuffix("/") ? root : root + "/"
+        return path.hasPrefix(r) ? String(path.dropFirst(r.count)) : reroot(path, root: root)
+    }
+
+    /// Maps a stored path (relative, or absolute from any older container) onto the current root.
+    public static func reroot(_ stored: String, root: String) -> String {
+        let r = root.hasSuffix("/") ? String(root.dropLast()) : root
+        guard stored.hasPrefix("/") else { return r + "/" + stored }
+        let marker = "/Application Support/SayLess/"
+        guard let range = stored.range(of: marker, options: .backwards) else { return stored }
+        return r + "/" + stored[range.upperBound...]
+    }
+
+    private static func resolve(_ stored: String?) -> String? {
+        guard let stored, !stored.isEmpty else { return nil }
+        let path = reroot(stored, root: EnginePaths.root.path)
+        return FileManager.default.fileExists(atPath: path) ? path : nil
+    }
+
+    /// Finds a model folder by name when the manifest lost track of it.
+    private static func scan(_ base: URL, dirNamed name: String) -> String? {
+        guard let en = FileManager.default.enumerator(at: base, includingPropertiesForKeys: [.isDirectoryKey],
+                                                      options: [.skipsHiddenFiles]) else { return nil }
+        for case let url as URL in en where url.lastPathComponent == name {
+            if (try? FileManager.default.contentsOfDirectory(atPath: url.path))?.isEmpty == false { return url.path }
+        }
+        return nil
+    }
 }

@@ -4,6 +4,7 @@
 // 2. Whisper (variant from $WHISPER_VARIANT): transcribe the wav, translate the transcript.
 import Foundation
 import SayLessEngine
+import CryptoKit
 
 @main
 struct Smoke {
@@ -13,6 +14,19 @@ struct Smoke {
         let ggufs = Array(args.dropFirst())
         var failed = false
         var working: LlamaTranslator?
+
+        // Model paths must survive an app update (new container path).
+        let newRoot = "/var/mobile/Containers/Data/Application/NEW/Library/Application Support/SayLess"
+        let cases: [(String, String)] = [
+            ("/var/mobile/Containers/Data/Application/OLD/Library/Application Support/SayLess/Models/gguf/a.gguf", newRoot + "/Models/gguf/a.gguf"),
+            ("Models/tts/x/y", newRoot + "/Models/tts/x/y"),
+            ("/elsewhere/file", "/elsewhere/file"),
+        ]
+        for (stored, want) in cases {
+            let got = InstalledManifest.reroot(stored, root: newRoot)
+            print(got == want ? "self-test reroot OK \(stored.suffix(20))" : "::error::reroot \(stored) → \(got), want \(want)")
+            if got != want { failed = true }
+        }
         print("loaded llama: \(LlamaTranslator.systemInfo)")
 
         for path in ggufs {
@@ -58,12 +72,43 @@ struct Smoke {
             }
         }
 
+        // Fast downloads: the chunked GGUF must match the curl copy byte for byte.
+        if let path = ggufs.first {
+            print("=== chunked download")
+            let name = (path as NSString).lastPathComponent
+            let src = URL(string: "https://huggingface.co/tencent/Hy-MT2-1.8B-GGUF/resolve/main/\(name)")!
+            let size = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? Int64) ?? 0
+            let dest = FileManager.default.temporaryDirectory.appending(path: "chunked-\(name)")
+            try? FileManager.default.removeItem(at: dest)
+            let t0 = Date()
+            do {
+                _ = try await ChunkedDownloader().download(src, to: dest, expectedBytes: size, connections: 6) { _ in }
+                let s = Date().timeIntervalSince(t0)
+                let same = sha256(dest.path) == sha256(path)
+                print("chunked \(size / 1_000_000) MB in \(String(format: "%.1f", s)) s (\(String(format: "%.0f", Double(size) / 1e6 / s)) MB/s) identical=\(same)")
+                if !same { print("::error::chunked download differs from curl copy"); failed = true }
+            } catch {
+                print("::error::chunked download failed: \(error)"); failed = true
+            }
+            try? FileManager.default.removeItem(at: dest)
+        }
+
         let variant = ProcessInfo.processInfo.environment["WHISPER_VARIANT"] ?? "openai_whisper-base"
         print("=== STT \(variant)")
         do {
+            // Prefetch then the kit: the kit must accept the prefetched files without rewriting them.
+            let repo = "argmaxinc/whisperkit-coreml"
+            let tp = Date()
+            try await HubPrefetch.fetch(repo: repo, base: EnginePaths.whisperBase, include: { $0.hasPrefix(variant + "/") }) { _ in }
+            print("prefetch in \(String(format: "%.1f", Date().timeIntervalSince(tp))) s")
+            let weights = EnginePaths.whisperBase.appending(path: "models/\(repo)/\(variant)/AudioEncoder.mlmodelc/weights/weight.bin")
+            let before = (try? FileManager.default.attributesOfItem(atPath: weights.path)[.modificationDate] as? Date) ?? nil
             let t0 = Date()
             let folder = try await WhisperRecognizer.download(variant: variant, repo: "argmaxinc/whisperkit-coreml") { _ in }
             print("downloaded in \(Int(Date().timeIntervalSince(t0))) s → \(folder.lastPathComponent)")
+            let after = (try? FileManager.default.attributesOfItem(atPath: weights.path)[.modificationDate] as? Date) ?? nil
+            if before == nil || before != after { print("::error::kit re-downloaded prefetched weights (\(String(describing: before)) → \(String(describing: after)))"); failed = true }
+            else { print("self-test prefetch reused by kit OK") }
             let t1 = Date()
             let rec = try await WhisperRecognizer(folder: folder.path)
             print("loaded in \(Int(Date().timeIntervalSince(t1) * 1000)) ms")
@@ -82,6 +127,13 @@ struct Smoke {
         }
         print(failed ? "SMOKE FAILED" : "SMOKE OK")
         exit(failed ? 1 : 0)
+    }
+
+    static func sha256(_ path: String) -> String {
+        guard let h = FileHandle(forReadingAtPath: path) else { return "" }
+        var hasher = SHA256()
+        while let d = try? h.read(upToCount: 8 << 20), !d.isEmpty { hasher.update(data: d) }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
     /// Minimal WAV reader: 16-bit PCM mono 16 kHz (made in CI with `say` + `afconvert`).

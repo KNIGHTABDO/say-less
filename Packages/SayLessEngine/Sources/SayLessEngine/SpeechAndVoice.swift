@@ -28,8 +28,13 @@ public final class WhisperRecognizer: @unchecked Sendable {
 
     /// Download the model files (and tokenizer) into the app's model folder.
     public static func download(variant: String, repo: String, progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
+        // Parallel fetch first; the kit then only checks each file against the server.
+        let prefetched = await prefetch("speech") {
+            try await HubPrefetch.fetch(repo: repo, base: EnginePaths.whisperBase,
+                                        include: { $0.hasPrefix(variant + "/") }) { progress($0 * 0.97) }
+        }
         let url = try await WhisperKit.download(variant: variant, downloadBase: EnginePaths.whisperBase, from: repo) { p in
-            progress(p.fractionCompleted)
+            progress(prefetched ? 0.97 + 0.03 * p.fractionCompleted : p.fractionCompleted)
         }
         EnginePaths.excludeFromBackup(EnginePaths.whisperBase)
         return url
@@ -82,10 +87,31 @@ public final class QwenVoice: @unchecked Sendable {
     public func unload() async { await kit.unloadModels() }
 
     public static func download(progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
+        let config = TTSKitConfig(model: .qwen3TTS_0_6b)
+        let patterns = config.downloadPatterns + config.downloadAdditionalPatterns
+        let prefetched = await prefetch("voice") {
+            try await HubPrefetch.fetch(repo: config.modelRepo, endpoint: config.modelEndpoint, base: EnginePaths.ttsBase,
+                                        include: { name in patterns.contains { globMatch($0, name) } }) { progress($0 * 0.97) }
+        }
         let url = try await TTSKit.download(variant: .qwen3TTS_0_6b, downloadBase: EnginePaths.ttsBase) { p in
-            progress(p.fractionCompleted)
+            progress(prefetched ? 0.97 + 0.03 * p.fractionCompleted : p.fractionCompleted)
         }
         EnginePaths.excludeFromBackup(EnginePaths.ttsBase)
         return url
+    }
+}
+
+/// Runs a parallel prefetch; a failure is only logged because the kit's own download follows.
+func prefetch(_ name: String, _ work: () async throws -> Void) async -> Bool {
+    let t0 = Date()
+    do {
+        try await work()
+        Breadcrumbs.note("prefetch \(name) ok in \(Int(Date().timeIntervalSince(t0))) s")
+        return true
+    } catch is CancellationError {
+        return false
+    } catch {
+        Breadcrumbs.note("prefetch \(name) failed: \(error.localizedDescription)")
+        return false
     }
 }

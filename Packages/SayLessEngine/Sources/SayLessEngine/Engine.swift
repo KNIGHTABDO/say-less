@@ -89,14 +89,14 @@ public actor Engine {
         let t = Date()
         switch c {
         case .speech:
-            guard let folder = manifest.whisperFolder else { throw EngineError.notLoaded("speech pack") }
+            guard let folder = manifest.whisperPath else { throw EngineError.notLoaded("speech pack") }
             recognizer = try await WhisperRecognizer(folder: folder)
         case .translation:
-            guard let file = manifest.translationFile else { throw EngineError.notLoaded("translation pack") }
+            guard let file = manifest.translationPath else { throw EngineError.notLoaded("translation pack") }
             translator = try LlamaTranslator(modelPath: file, gpu: useGPU)
             activeTranslationName = registry.translation.first { $0.id == manifest.translationID }?.displayName ?? "custom"
         case .voice:
-            guard let folder = manifest.voiceFolder else { throw EngineError.notLoaded("voice pack") }
+            guard let folder = manifest.voicePath else { throw EngineError.notLoaded("voice pack") }
             voice = try await QwenVoice(folder: URL(fileURLWithPath: folder))
         }
         let ms = Int(Date().timeIntervalSince(t) * 1000)

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import SayLessEngine
 
 /// Which half of the table. `me` is the bottom half; `them` is the top half, rotated 180°.
@@ -33,6 +34,8 @@ struct PackState: Equatable {
     var progress: Double?     // non-nil while downloading
     var status = ""
     var error: String?
+    /// Measured download speed in MB/s while downloading (nil until there is a reading).
+    var mbps: Double?
 }
 
 @MainActor
@@ -118,19 +121,54 @@ final class AppModel {
     }
 
     /// Installs whatever is missing: translation first (the first real translation needs only it), then speech, then voice.
+    /// Installs whatever is missing, all packs at once (each on several connections).
     func installAll(includeVoice: Bool = true) {
         Task {
-            await install(.translation)
-            await install(.speech)
-            if includeVoice { await install(.voice) }
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { await self.install(.translation) }
+                group.addTask { await self.install(.speech) }
+                if includeVoice { group.addTask { await self.install(.voice) } }
+            }
         }
+    }
+
+    /// Approximate bytes per pack, for the speed reading.
+    private func packBytes(_ pack: PackInstaller.Pack) -> Double {
+        let r = ModelRegistry.bundled
+        switch pack {
+        case .speech: return Double(r.speech.downloadMB) * 1e6
+        case .translation: return Double(r.translation.first?.bytes ?? 1_133_080_448)
+        case .voice: return Double(r.voice.downloadMB) * 1e6
+        }
+    }
+
+    private var meters: [PackInstaller.Pack: (time: Date, fraction: Double)] = [:]
+
+    private func record(_ pack: PackInstaller.Pack, _ p: Double) {
+        packs[pack]?.progress = p
+        let now = Date()
+        guard let last = meters[pack] else { meters[pack] = (now, p); return }
+        let dt = now.timeIntervalSince(last.time)
+        guard dt >= 1 else { return }
+        let rate = max(0, p - last.fraction) * packBytes(pack) / dt / 1e6
+        let old = packs[pack]?.mbps
+        packs[pack]?.mbps = old.map { $0 * 0.6 + rate * 0.4 } ?? rate
+        meters[pack] = (now, p)
+    }
+
+    private func updateIdleTimer() {
+        UIApplication.shared.isIdleTimerDisabled = installing
     }
 
     func install(_ pack: PackInstaller.Pack) async {
         if demo || packs[pack]?.installed == true || packs[pack]?.progress != nil { return }
         packs[pack, default: PackState()].progress = 0
         packs[pack]?.error = nil
-        let progress: @Sendable (Double) -> Void = { p in Task { @MainActor in self.packs[pack]?.progress = p } }
+        packs[pack]?.mbps = nil
+        meters[pack] = nil
+        updateIdleTimer()   // keep the screen on: iOS pauses downloads soon after it locks
+        defer { updateIdleTimer() }
+        let progress: @Sendable (Double) -> Void = { p in Task { @MainActor in self.record(pack, p) } }
         let status: @Sendable (String) -> Void = { s in Task { @MainActor in self.packs[pack]?.status = s } }
         do {
             switch pack {
@@ -151,6 +189,7 @@ final class AppModel {
             Breadcrumbs.note("install \(pack.rawValue) failed: \(error.localizedDescription)")
         }
         packs[pack]?.progress = nil
+        packs[pack]?.mbps = nil
         refreshPacks()
     }
 

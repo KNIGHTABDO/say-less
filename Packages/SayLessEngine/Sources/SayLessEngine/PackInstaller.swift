@@ -19,7 +19,7 @@ public enum PackInstaller {
         Breadcrumbs.begin("install-speech")
         let url = try await WhisperRecognizer.download(variant: registry.speech.variant, repo: registry.speech.repo, progress: progress)
         var m = InstalledManifest.load()
-        m.whisperFolder = url.path
+        m.whisperFolder = InstalledManifest.store(url)
         m.save()
         Breadcrumbs.end("install-speech", ms: 0)
     }
@@ -32,7 +32,7 @@ public enum PackInstaller {
         for (i, model) in registry.translation.enumerated() {
             let dest = EnginePaths.gguf.appending(path: model.url.lastPathComponent)
             status(i == 0 ? "Downloading \(model.displayName)" : "Trying \(model.displayName)")
-            let file = try await FileDownloader().download(model.url, to: dest, expectedBytes: model.bytes, progress: progress)
+            let file = try await ChunkedDownloader().download(model.url, to: dest, expectedBytes: model.bytes, connections: 6, progress: progress)
             status("Checking \(model.displayName)")
             Breadcrumbs.begin("selftest-\(model.id)")
             let result: (passed: Bool, output: String)
@@ -47,7 +47,7 @@ public enum PackInstaller {
             if result.passed {
                 var m = InstalledManifest.load()
                 m.translationID = model.id
-                m.translationFile = file.path
+                m.translationFile = InstalledManifest.store(file)
                 m.save()
                 // Free the disk taken by models that failed.
                 for other in registry.translation where other.id != model.id {
@@ -65,7 +65,7 @@ public enum PackInstaller {
         Breadcrumbs.begin("install-voice")
         let url = try await QwenVoice.download(progress: progress)
         var m = InstalledManifest.load()
-        m.voiceFolder = url.path
+        m.voiceFolder = InstalledManifest.store(url)
         m.save()
         Breadcrumbs.end("install-voice", ms: 0)
     }
