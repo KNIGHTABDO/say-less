@@ -1,5 +1,5 @@
-# Every push: compile the app for the simulator (the compiler gate; there is no Mac locally).
-# Screenshots: on commits containing [shots], or by hand.
+# Every push: compile the app for a real iPhone (the compiler gate; there is no Mac locally).
+# llama.cpp's xcframework has no simulator slice, so simulator screenshots are off until we ship our own build of it.
 # Tags v*: unsigned SayLess.ipa + SideStore source (apps.json) attached to a GitHub Release.
 name: iOS
 
@@ -13,7 +13,7 @@ on:
       screens:
         description: Take simulator screenshots
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: write
@@ -45,11 +45,11 @@ jobs:
           path: build/SourcePackages
           key: spm-${{ hashFiles('project.yml', 'Packages/SayLessEngine/Package.swift') }}
 
-      - name: Compile (simulator)
+      - name: Compile (device)
         run: |
           set -o pipefail
           xcodebuild -project SayLess.xcodeproj -scheme SayLess -configuration Debug \
-            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -sdk iphoneos -destination 'generic/platform=iOS' \
             -derivedDataPath build/dd -clonedSourcePackagesDirPath build/SourcePackages \
             -skipPackagePluginValidation -skipMacroValidation \
             CODE_SIGNING_ALLOWED=NO build > build.log 2>&1 \
@@ -58,7 +58,7 @@ jobs:
           echo "BUILD OK"
 
       - name: Screenshots
-        if: github.ref_type != 'tag' && (contains(github.event.head_commit.message, '[shots]') || inputs.screens)
+        if: false   # needs a simulator slice of llama.xcframework
         run: bash scripts/screens.sh build/dd/Build/Products/Debug-iphonesimulator/SayLess.app screens
 
       - uses: actions/upload-artifact@v4

@@ -44,7 +44,7 @@ public final class LlamaTranslator: @unchecked Sendable {
         self.greedy = greedy
         var mp = llama_model_default_params()
         mp.n_gpu_layers = gpu ? 99 : 0
-        mp.use_mmap = true
+        mp.load_mode = LLAMA_LOAD_MODE_MMAP
         guard let m = llama_model_load_from_file(modelPath, mp) else {
             throw EngineError.loadFailed((modelPath as NSString).lastPathComponent)
         }
