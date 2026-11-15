@@ -160,7 +160,7 @@ struct SettingsView: View {
                 Text("You can download it again later.")
             }
             .task { await measure() }
-            .onChange(of: model.packs) { Task { await measure() } }
+            .onChange(of: PackInstaller.Pack.allCases.map { model.packs[$0]?.installed == true }) { Task { await measure() } }
         }
         .tint(Palette.terracotta)
     }

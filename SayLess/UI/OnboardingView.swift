@@ -66,9 +66,10 @@ struct OnboardingView: View {
                 Spacer(minLength: 6)
                 stampCorner
             }
-            Text(picked.compactMap { Language.named($0)?.nativeName }.joined(separator: ", "))
-                .font(Fonts.card(28))
+            Text(first.isEmpty ? picked.compactMap { Language.named($0)?.nativeName }.joined(separator: ", ") : first)
+                .font(Fonts.card(first.isEmpty ? 28 : 24))
                 .foregroundStyle(Palette.sea)
+                .environment(\.layoutDirection, !first.isEmpty && firstLanguage?.rtl == true ? .rightToLeft : .leftToRight)
                 .contentTransition(.interpolate)
                 .animation(.smooth, value: picked)
             Spacer(minLength: 0)
@@ -268,13 +269,13 @@ struct OnboardingView: View {
         } else {
             return
         }
-        try? await Task.sleep(for: .milliseconds(900))
+        // Let it be read on the back, then turn the card over and postmark the front, where it stays.
+        try? await Task.sleep(for: .milliseconds(2200))
         flipped = false
-        try? await Task.sleep(for: .milliseconds(600))
+        try? await Task.sleep(for: .milliseconds(750))
         withAnimation(.stamp) { stamped = true }
         Haptics.stamp()
-        flipped = true
-        step = .done
+        withAnimation(.card) { step = .done }
     }
 
     private func finish() {

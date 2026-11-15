@@ -59,7 +59,7 @@ public actor Engine {
         guard let translator else { throw EngineError.notLoaded("translation") }
         let out = try translator.translate(text, to: target, onPartial: onPartial)
         timings.append(StageTiming(stage: "translation", ms: out.ms,
-                                   detail: "\(out.tokens) tok, \(String(format: "%.1f", out.tokensPerSecond)) tok/s", date: Date()))
+                                   detail: "prompt \(out.promptTokens) tok \(out.promptMs) ms · gen \(out.tokens) tok \(String(format: "%.1f", out.genTokensPerSecond)) tok/s", date: Date()))
         trimTimings()
         return out
     }

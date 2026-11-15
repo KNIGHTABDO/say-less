@@ -13,6 +13,7 @@ struct Smoke {
         let ggufs = Array(args.dropFirst())
         var failed = false
         var working: LlamaTranslator?
+        print("loaded llama: \(LlamaTranslator.systemInfo)")
 
         for path in ggufs {
             let name = (path as NSString).lastPathComponent
@@ -27,7 +28,7 @@ struct Smoke {
                 for code in ["fr", "ja", "ar", "de", "zh"] {
                     let lang = Language.named(code)!
                     let r = try t.translate("Excuse me, how much is a ticket to the old town?", to: lang, maxTokens: 64)
-                    print("  en→\(code): \(r.text)  (\(r.tokens) tok, \(String(format: "%.1f", r.tokensPerSecond)) tok/s)")
+                    print("  en→\(code): \(r.text)  (\(r.tokens) tok, \(r.ms) ms total; prompt \(r.promptTokens) tok in \(r.promptMs) ms; gen \(String(format: "%.1f", r.genTokensPerSecond)) tok/s)")
                 }
                 if ok && working == nil { working = t }
             } catch {

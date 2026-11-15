@@ -5,6 +5,11 @@ public struct TranslationOutput: Sendable {
     public var text: String
     public var tokens: Int
     public var ms: Int
+    /// Breakdown from llama's own counters: prompt tokens and time, generation-only time.
+    public var promptTokens = 0
+    public var promptMs = 0
+    public var genMs = 0
+    public var genTokensPerSecond: Double { genMs > 0 ? Double(tokens) * 1000 / Double(genMs) : 0 }
     public var tokensPerSecond: Double { ms > 0 ? Double(tokens) * 1000 / Double(ms) : 0 }
 }
 
@@ -33,7 +38,20 @@ public final class LlamaTranslator: @unchecked Sendable {
     private var template: String?
     public private(set) var templateName = "raw"
 
-    private static let backendOnce: Void = { llama_backend_init() }()
+    private static let backendOnce: Void = {
+        // Only warnings and errors: llama's debug log (one line per tensor) slows loading.
+        llama_log_set({ level, text, _ in
+            guard level == GGML_LOG_LEVEL_WARN || level == GGML_LOG_LEVEL_ERROR, let text else { return }
+            fputs(String(cString: text), stderr)
+        }, nil)
+        llama_backend_init()
+    }()
+
+    /// llama.cpp build and CPU features, for diagnostics.
+    public static var systemInfo: String {
+        _ = backendOnce
+        return llama_print_system_info().map { String(cString: $0) } ?? "?"
+    }
 
     /// - Parameters:
     ///   - gpu: offload layers to Metal (off on simulators / CI VMs).
@@ -55,6 +73,12 @@ public final class LlamaTranslator: @unchecked Sendable {
         let threads = Int32(max(2, min(6, ProcessInfo.processInfo.activeProcessorCount - 1)))
         cp.n_threads = threads
         cp.n_threads_batch = threads
+        if !gpu {
+            // Keep everything on the CPU: by default the KV cache and big host ops still go to Metal.
+            cp.offload_kqv = false
+            cp.op_offload = false
+        }
+        cp.no_perf = false
         guard let c = llama_init_from_model(m, cp) else {
             llama_model_free(m)
             throw EngineError.loadFailed("translation context")
@@ -81,6 +105,7 @@ public final class LlamaTranslator: @unchecked Sendable {
         guard let ctx, let vocab else { throw EngineError.notLoaded("translator") }
         let start = Date()
         llama_memory_clear(llama_get_memory(ctx), true)
+        llama_perf_context_reset(ctx)
 
         let user = Self.prompt(text, to: target)
         let formatted = applyTemplate(user)
@@ -110,7 +135,12 @@ public final class LlamaTranslator: @unchecked Sendable {
             if rc != 0 { break }
         }
         let out = Self.clean(String(decoding: bytes, as: UTF8.self))
-        return TranslationOutput(text: out, tokens: produced, ms: Int(Date().timeIntervalSince(start) * 1000))
+        let perf = llama_perf_context(ctx)
+        var result = TranslationOutput(text: out, tokens: produced, ms: Int(Date().timeIntervalSince(start) * 1000))
+        result.promptTokens = Int(perf.n_p_eval)
+        result.promptMs = Int(perf.t_p_eval_ms)
+        result.genMs = Int(perf.t_eval_ms)
+        return result
     }
 
     // MARK: - helpers
