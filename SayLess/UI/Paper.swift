@@ -132,6 +132,7 @@ struct StampView: View {
             RoundedRectangle(cornerRadius: 2)
                 .fill(color.gradient)
                 .padding(size * 0.1)
+            Group {
             if size < 40 {
                 // Too small for a name: colour and code only.
                 Text(language.code.uppercased())
@@ -148,6 +149,7 @@ struct StampView: View {
                         .font(.system(size: size * 0.12, weight: .heavy, design: .rounded))
                         .opacity(0.75)
                 }
+            }
             }
             .foregroundStyle(.white)
             .padding(size * 0.16)
