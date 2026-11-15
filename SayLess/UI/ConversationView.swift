@@ -5,19 +5,45 @@ import SayLessEngine
 /// in each half's own coordinates the fold is at the top and that person's hand is at the bottom.
 struct ConversationView: View {
     @Environment(AppModel.self) private var model
-    @State private var rackSide: Side?
+    @State private var rackSide: Side? = DemoMode.isOn && DemoMode.screen == "rack" ? .them : nil
     @State private var showSettings = DemoMode.isOn && DemoMode.screen == "settings"
+    /// Whose words are being typed. The composer is always upright at the bottom, above the keyboard.
+    @State private var typingSide: Side? = DemoMode.isOn && DemoMode.screen == "typing" ? .me : nil
+    @State private var draft = DemoMode.isOn && DemoMode.screen == "typing" ? "Where can I buy a train ticket?" : ""
 
     var body: some View {
-        GeometryReader { geo in
-            VStack(spacing: 0) {
-                HalfView(side: .them, edgeInset: geo.safeAreaInsets.top, rackSide: $rackSide, showSettings: $showSettings)
-                    .rotationEffect(.degrees(180))
-                Fold()
-                HalfView(side: .me, edgeInset: geo.safeAreaInsets.bottom, rackSide: $rackSide, showSettings: $showSettings)
+        ZStack {
+            GeometryReader { geo in
+                VStack(spacing: 0) {
+                    HalfView(side: .them, edgeInset: geo.safeAreaInsets.top, rackSide: $rackSide,
+                             showSettings: $showSettings, typingSide: $typingSide)
+                        .rotationEffect(.degrees(180))
+                    Fold()
+                    HalfView(side: .me, edgeInset: geo.safeAreaInsets.bottom, rackSide: $rackSide,
+                             showSettings: $showSettings, typingSide: $typingSide)
+                }
+                .ignoresSafeArea()   // the table never squeezes for the keyboard; the composer rises instead
             }
-            .ignoresSafeArea()
+
+            if let side = typingSide {
+                // Tap anywhere on the table to put the keyboard away.
+                Color.black.opacity(0.38)
+                    .ignoresSafeArea()
+                    .contentShape(.rect)
+                    .onTapGesture { close() }
+                    .transition(.opacity)
+                    .accessibilityLabel("Close keyboard")
+                    .accessibilityAddTraits(.isButton)
+                VStack {
+                    Spacer()
+                    Composer(side: side, draft: $draft, onSend: { send(side) }, onClose: close)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 8)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
+        .animation(.card, value: typingSide)
         .sheet(item: $rackSide) { side in
             RackView(side: side)
         }
@@ -25,9 +51,82 @@ struct ConversationView: View {
             SettingsView()
         }
     }
+
+    private func send(_ side: Side) {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        model.send(text, from: side)
+        draft = ""
+        close()
+    }
+
+    private func close() {
+        typingSide = nil
+        Haptics.select()
+    }
 }
 
 extension Side: Identifiable { var id: String { rawValue } }
+
+/// The typing card: big, upright, always above the keyboard, with what you wrote in full view.
+struct Composer: View {
+    @Environment(AppModel.self) private var model
+    let side: Side
+    @Binding var draft: String
+    let onSend: () -> Void
+    let onClose: () -> Void
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        let lang = model.language(side)
+        let target = model.language(side.other)
+        let empty = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                StampView(language: lang, size: 30)
+                Text("\(lang.englishName) → \(target.englishName)")
+                    .font(Fonts.label(15))
+                    .foregroundStyle(Palette.fadedInk)
+                Spacer()
+                Button(action: onClose) {
+                    Image(systemName: "keyboard.chevron.compact.down")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(Palette.ink)
+                        .frame(width: 40, height: 40)
+                        .background(Circle().fill(Palette.ink.opacity(0.07)))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Hide keyboard")
+            }
+            HStack(alignment: .bottom, spacing: 12) {
+                TextField("", text: $draft,
+                          prompt: Text("Type in \(lang.englishName)…").foregroundStyle(Palette.fadedInk), axis: .vertical)
+                    .font(Fonts.card(24))
+                    .foregroundStyle(Palette.ink)
+                    .tint(Palette.terracotta)
+                    .lineLimit(1...6)
+                    .focused($focused)
+                    .submitLabel(.send)
+                    .onSubmit(onSend)
+                    .environment(\.layoutDirection, lang.rtl ? .rightToLeft : .leftToRight)
+                    .frame(minHeight: 44)
+                Button(action: onSend) {
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 50, height: 50)
+                        .background(Circle().fill(empty ? Palette.ink.opacity(0.25) : Palette.terracotta))
+                }
+                .buttonStyle(.plain)
+                .disabled(empty)
+                .accessibilityLabel("Translate")
+            }
+        }
+        .padding(18)
+        .cardStock(seed: 77, lifted: true)
+        .onAppear { focused = true }
+    }
+}
 
 /// One person's half of the table: their language, their stack of cards, their talk button.
 struct HalfView: View {
@@ -36,9 +135,7 @@ struct HalfView: View {
     let edgeInset: CGFloat
     @Binding var rackSide: Side?
     @Binding var showSettings: Bool
-    @State private var typing = false
-    @State private var draft = ""
-    @FocusState private var fieldFocused: Bool
+    @Binding var typingSide: Side?
 
     var body: some View {
         let lang = model.language(side)
@@ -49,12 +146,12 @@ struct HalfView: View {
                     Haptics.select()
                 } label: {
                     HStack(spacing: 8) {
-                        StampView(language: lang, size: 22)
-                        Text(lang.nativeName).font(Fonts.label(15))
-                        Image(systemName: "chevron.down").font(.system(size: 11, weight: .bold))
+                        StampView(language: lang, size: 26)
+                        Text(lang.nativeName).font(Fonts.label(16))
+                        Image(systemName: "chevron.down").font(.system(size: 12, weight: .bold))
                     }
-                    .foregroundStyle(Palette.ink)
-                    .padding(.leading, 6)
+                    .foregroundStyle(Palette.onTable)
+                    .padding(.leading, 8)
                     .padding(.trailing, 14)
                     .padding(.vertical, 6)
                 }
@@ -69,9 +166,9 @@ struct HalfView: View {
                         showSettings = true
                     } label: {
                         Image(systemName: "gearshape")
-                            .font(.system(size: 17, weight: .medium))
-                            .foregroundStyle(Palette.ink)
-                            .frame(width: 40, height: 40)
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundStyle(Palette.onTable)
+                            .frame(width: 44, height: 44)
                     }
                     .buttonStyle(.plain)
                     .glassEffect(.regular.interactive(), in: .circle)
@@ -85,54 +182,25 @@ struct HalfView: View {
 
             GlassEffectContainer(spacing: 12) {
                 HStack(spacing: 12) {
-                    if typing {
-                        TextField("Type in \(lang.englishName)", text: $draft, axis: .vertical)
-                            .font(Fonts.card(18))
-                            .foregroundStyle(Palette.ink)
-                            .lineLimit(1...3)
-                            .focused($fieldFocused)
-                            .submitLabel(.send)
-                            .onSubmit(send)
-                            .padding(.horizontal, 20)
-                            .frame(minHeight: 60)
-                            .glassEffect(.regular, in: .capsule)
-                        Button(action: send) {
-                            Image(systemName: "arrow.up")
-                                .font(.system(size: 19, weight: .bold))
-                                .foregroundStyle(.white)
-                                .frame(width: 60, height: 60)
-                        }
-                        .buttonStyle(.plain)
-                        .glassEffect(.regular.tint(Palette.stamp(lang)).interactive(), in: .circle)
-                        .accessibilityLabel("Translate")
-                    } else {
-                        TalkCapsule(side: side)
-                    }
+                    TalkCapsule(side: side)
                     Button {
-                        withAnimation(.card) { typing.toggle() }
-                        fieldFocused = typing
+                        typingSide = side
                         Haptics.select()
                     } label: {
-                        Image(systemName: typing ? "mic" : "keyboard")
-                            .font(.system(size: 18, weight: .medium))
-                            .foregroundStyle(Palette.ink)
+                        Image(systemName: "keyboard")
+                            .font(.system(size: 19, weight: .medium))
+                            .foregroundStyle(Palette.onTable)
                             .frame(width: 60, height: 60)
-                            .contentTransition(.symbolEffect(.replace))
                     }
                     .buttonStyle(.plain)
                     .glassEffect(.regular.interactive(), in: .circle)
-                    .accessibilityLabel(typing ? "Speak instead" : "Type instead")
+                    .accessibilityLabel("Type instead")
                 }
             }
         }
         .padding(.horizontal, 18)
         .padding(.bottom, max(edgeInset, 12) + 6)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private func send() {
-        model.send(draft, from: side)
-        draft = ""
     }
 }
 
@@ -154,7 +222,7 @@ struct TalkCapsule: View {
                 .font(Fonts.label(17))
                 .lineLimit(1)
         }
-        .foregroundStyle(holding ? .white : Palette.ink)
+        .foregroundStyle(holding ? .white : Palette.onTable)
         .frame(maxWidth: .infinity, minHeight: 60)
         .background {
             Capsule()
@@ -222,28 +290,30 @@ struct CardStack: View {
     }
 }
 
-/// A blank card that says hello in this person's language until the first message arrives.
+/// A plain postcard that says hello in this person's language until the first message arrives.
 struct EmptyCard: View {
+    @Environment(AppModel.self) private var model
     let language: Language
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 12) {
             Text(language.hello)
-                .font(Fonts.card(34))
-                .foregroundStyle(Palette.fadedInk)
+                .font(Fonts.card(36))
+                .foregroundStyle(Palette.ink)
                 .environment(\.layoutDirection, language.rtl ? .rightToLeft : .leftToRight)
-            Image(systemName: "hand.point.down")
-                .font(.system(size: 20))
-                .foregroundStyle(Palette.fadedInk.opacity(0.7))
-                .symbolEffect(.bounce, options: .repeat(.periodic(delay: 2.5)))
+                .minimumScaleFactor(0.6)
+                .lineLimit(1)
+            Text(model.ready ? "Hold the button and speak" : "Getting ready…")
+                .font(Fonts.label(15))
+                .foregroundStyle(Palette.fadedInk)
         }
-        .frame(maxWidth: .infinity, minHeight: 170)
-        .background {
-            DeckleShape(seed: 21)
-                .stroke(Palette.ink.opacity(0.18), style: StrokeStyle(lineWidth: 1.2, dash: [6, 5]))
-        }
+        .padding(.vertical, 30)
+        .padding(.horizontal, 20)
+        .frame(maxWidth: .infinity)
+        .cardStock(seed: 21)
         .rotationEffect(.degrees(-1.2))
         .padding(.top, 20)
+        .accessibilityElement(children: .combine)
         .accessibilityLabel("\(language.englishName). Hold the button below and speak.")
     }
 }
@@ -306,37 +376,36 @@ struct Fold: View {
     var body: some View {
         ZStack {
             Rectangle()
-                .fill(LinearGradient(colors: [.black.opacity(0.0), .black.opacity(0.08), .white.opacity(0.18), .black.opacity(0.0)],
+                .fill(LinearGradient(colors: [.black.opacity(0.0), .black.opacity(0.10), .white.opacity(0.10), .black.opacity(0.0)],
                                      startPoint: .top, endPoint: .bottom))
                 .frame(height: 6)
             HStack(spacing: 10) {
                 if let line = statusLine {
                     Text(line)
-                        .font(Fonts.label(12))
-                        .foregroundStyle(Palette.ink)
+                        .font(Fonts.label(15))
+                        .foregroundStyle(Palette.onTable)
+                        .monospacedDigit()
                         .lineLimit(1)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .glassEffect(.regular, in: .capsule)
+                        .minimumScaleFactor(0.8)
                         .transition(.blurReplace)
-                        .id(line)
+                        .contentTransition(.numericText())
                 }
                 Spacer()
                 Button {
                     withAnimation(.card) { model.swapSides() }
                 } label: {
                     Image(systemName: "arrow.up.arrow.down")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Palette.ink)
-                        .frame(width: 38, height: 38)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Palette.onTable)
+                        .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.plain)
                 .glassEffect(.regular.interactive(), in: .circle)
                 .accessibilityLabel("Swap languages")
             }
-            .padding(.horizontal, 18)
+            .padding(.horizontal, 20)
         }
-        .frame(height: 44)
+        .frame(height: 50)
         .animation(.smooth, value: statusLine)
         .task(id: model.notice) {
             guard model.notice != nil else { return }
@@ -347,13 +416,14 @@ struct Fold: View {
 
     private var statusLine: String? {
         if let n = model.notice { return n }
-        let order: [(PackInstaller.Pack, String)] = [(.translation, "translator"), (.speech, "ears"), (.voice, "voice")]
-        for (pack, name) in order {
-            if let p = model.packs[pack]?.progress {
-                return "Packing the \(name) · \(Int(p * 100))%"
-            }
+        let busy = model.packs.values.filter { $0.progress != nil }
+        if !busy.isEmpty {
+            let p = model.overallProgress
+            let speed = busy.compactMap(\.mbps).reduce(0, +)
+            let rate = speed >= 0.5 ? " · \(Int(speed.rounded())) MB/s" : ""
+            return "Downloading models · \(Int(p * 100))%\(rate)"
         }
-        if !model.ready { return "Some packs are missing. Open Settings." }
+        if !model.ready { return "Some models are missing. Open Settings." }
         return nil
     }
 }

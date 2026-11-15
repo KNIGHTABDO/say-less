@@ -141,7 +141,7 @@ struct OnboardingView: View {
             if first.isEmpty {
                 PackTags()
                 Text("About 2.8 GB, downloaded once. Everything stays on this phone. Wi‑Fi is best.")
-                    .font(.system(size: 13, design: .serif).italic())
+                    .font(.system(size: 15, design: .serif).italic())
                     .foregroundStyle(Palette.fadedInk)
             } else {
                 Text(first)
@@ -150,7 +150,7 @@ struct OnboardingView: View {
                     .environment(\.layoutDirection, firstLanguage?.rtl == true ? .rightToLeft : .leftToRight)
                     .transition(.blurReplace)
                 Text("That was translated on your phone, offline.")
-                    .font(.system(size: 13, design: .serif).italic())
+                    .font(.system(size: 15, design: .serif).italic())
                     .foregroundStyle(Palette.fadedInk)
             }
             Spacer(minLength: 0)
@@ -170,8 +170,8 @@ struct OnboardingView: View {
             VStack(spacing: 16) {
                 HStack {
                     Text("I speak")
-                        .font(Fonts.hand(24))
-                        .foregroundStyle(Palette.ink)
+                        .font(Fonts.hand(26))
+                        .foregroundStyle(Palette.onTable)
                     Menu {
                         ForEach(Language.all) { lang in
                             Button(lang.nativeName) { model.myLanguage = lang.code; picked.removeAll { $0 == lang.code } }
@@ -181,7 +181,7 @@ struct OnboardingView: View {
                             Text(model.me.nativeName).font(Fonts.label(15))
                             Image(systemName: "chevron.down").font(.system(size: 11, weight: .bold))
                         }
-                        .foregroundStyle(Palette.ink)
+                        .foregroundStyle(Palette.onTable)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
                         .glassEffect(.regular.interactive(), in: .capsule)
@@ -211,8 +211,8 @@ struct OnboardingView: View {
         case .permission:
             VStack(spacing: 14) {
                 Text("P.S. I only listen while you hold the button. Nothing you say leaves this phone.")
-                    .font(Fonts.card(18))
-                    .foregroundStyle(Palette.ink)
+                    .font(Fonts.card(19))
+                    .foregroundStyle(Palette.onTable)
                     .multilineTextAlignment(.center)
                 primary("Let it listen") {
                     Task {
@@ -221,8 +221,8 @@ struct OnboardingView: View {
                     }
                 }
                 Button("Not now") { startPacking() }
-                    .font(Fonts.label(15))
-                    .foregroundStyle(Palette.fadedInk)
+                    .font(Fonts.label(16))
+                    .foregroundStyle(Palette.onTableSoft)
             }
             .transition(.move(edge: .bottom).combined(with: .opacity))
         case .packing, .done:
@@ -230,8 +230,8 @@ struct OnboardingView: View {
                 primary(first.isEmpty ? "Start while it packs" : "Start talking") { finish() }
                 if first.isEmpty {
                     Text("You can start now. Talking works once the ears and translator are packed.")
-                        .font(.system(size: 13, design: .serif).italic())
-                        .foregroundStyle(Palette.fadedInk)
+                        .font(.system(size: 15, design: .serif).italic())
+                        .foregroundStyle(Palette.onTableSoft)
                         .multilineTextAlignment(.center)
                 }
             }
@@ -340,10 +340,12 @@ struct PackTags: View {
                 .contentTransition(.symbolEffect(.replace))
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text(name).font(Fonts.label(15)).foregroundStyle(Palette.ink)
+                    Text(name).font(Fonts.label(16)).foregroundStyle(Palette.ink)
                     Spacer()
-                    Text(state.installed ? "packed" : state.progress.map { "\(Int($0 * 100))%" } ?? (state.error != nil ? "tap to retry" : "waiting"))
-                        .font(Fonts.label(12))
+                    Text(state.installed ? "packed" : state.progress.map { p in
+                        "\(Int(p * 100))%" + (state.mbps.map { $0 >= 0.5 ? " · \(Int($0.rounded())) MB/s" : "" } ?? "")
+                    } ?? (state.error != nil ? "tap to retry" : "waiting"))
+                        .font(Fonts.label(14))
                         .foregroundStyle(Palette.fadedInk)
                         .monospacedDigit()
                 }
@@ -356,7 +358,7 @@ struct PackTags: View {
                 }
                 .frame(height: 4)
                 Text(state.status.isEmpty ? detail : state.status)
-                    .font(.system(size: 11, design: .serif).italic())
+                    .font(.system(size: 13, design: .serif).italic())
                     .foregroundStyle(Palette.fadedInk)
             }
         }

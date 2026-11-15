@@ -112,6 +112,13 @@ enum DemoMode {
             Card(speaker: .me, from: "en", to: "ja", original: "Where is the train station?", translated: "駅はどこですか？", stage: .done, tilt: 1.8, seed: 5),
             Card(speaker: .them, from: "ja", to: "en", original: "まっすぐ行って、二つ目の角を右です。", translated: "Go straight, then turn right at the second corner.", stage: .done, tilt: -0.8, seed: 9),
         ]
+        if screen == "empty" {
+            // First launch on the table: nothing said yet, models still downloading.
+            model.cards = []
+            model.packs[.translation] = PackState(progress: 0.17, mbps: 14)
+            model.packs[.speech] = PackState(progress: 0.42, mbps: 9)
+            model.packs[.voice] = PackState(progress: 0.05, mbps: 6)
+        }
         if screen == "live" {
             model.live[.me] = Card(speaker: .me, from: "en", to: "ja", original: "Is it far from here", stage: .listening, seed: 11)
         }

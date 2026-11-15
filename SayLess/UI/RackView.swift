@@ -23,7 +23,7 @@ struct RackView: View {
         VStack(spacing: 18) {
             Text(side == .me ? "I speak…" : "They speak…")
                 .font(Fonts.hand(38))
-                .foregroundStyle(Palette.ink)
+                .foregroundStyle(Palette.onTable)
                 .padding(.top, 28)
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -49,10 +49,10 @@ struct RackView: View {
             .frame(height: 290)
 
             HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass").foregroundStyle(Palette.fadedInk)
+                Image(systemName: "magnifyingglass").foregroundStyle(Palette.onTableSoft)
                 TextField("Find a language", text: $query)
-                    .font(Fonts.card(17))
-                    .foregroundStyle(Palette.ink)
+                    .font(Fonts.card(18))
+                    .foregroundStyle(Palette.onTable)
                     .autocorrectionDisabled()
             }
             .padding(.horizontal, 18)
@@ -106,7 +106,7 @@ struct RackCard: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top) {
                 Text(language.englishName.uppercased())
-                    .font(Fonts.label(11))
+                    .font(Fonts.label(12))
                     .tracking(1.2)
                     .foregroundStyle(Palette.fadedInk)
                 Spacer()
@@ -124,7 +124,7 @@ struct RackCard: View {
                 .foregroundStyle(Palette.sea)
                 .lineLimit(1)
             Label(language.hasVoice ? "Speaks aloud" : "Read only", systemImage: language.hasVoice ? "speaker.wave.2" : "text.alignleft")
-                .font(Fonts.label(11))
+                .font(Fonts.label(13))
                 .foregroundStyle(Palette.fadedInk)
         }
         .padding(16)

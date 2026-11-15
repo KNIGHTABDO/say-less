@@ -4,7 +4,7 @@ import SayLessEngine
 /// Postcards palette. Two moods: "Daylight" (sun on linen) and "Night train" (dark table, warm lamp).
 enum Palette {
     static func table(_ scheme: ColorScheme) -> Color {
-        scheme == .dark ? Color(red: 0.13, green: 0.12, blue: 0.11) : Color(red: 0.91, green: 0.87, blue: 0.80)
+        scheme == .dark ? Color(red: 0.115, green: 0.105, blue: 0.098) : Color(red: 0.91, green: 0.87, blue: 0.80)
     }
     static func tableShade(_ scheme: ColorScheme) -> Color {
         scheme == .dark ? Color(red: 0.07, green: 0.065, blue: 0.06) : Color(red: 0.78, green: 0.72, blue: 0.63)
@@ -12,8 +12,17 @@ enum Palette {
     static func paper(_ scheme: ColorScheme) -> Color {
         scheme == .dark ? Color(red: 0.93, green: 0.89, blue: 0.81) : Color(red: 0.985, green: 0.965, blue: 0.925)
     }
+    /// Ink is for paper only (cards, stamps). Text on the table or on glass uses `onTable`/`onTableSoft`.
     static let ink = Color(red: 0.17, green: 0.15, blue: 0.14)
-    static let fadedInk = Color(red: 0.17, green: 0.15, blue: 0.14).opacity(0.55)
+    /// Secondary ink on paper. 0.72 keeps 4.5:1 on card stock (checked in scripts/contrast.py).
+    static let fadedInk = Color(red: 0.17, green: 0.15, blue: 0.14).opacity(0.72)
+    /// Text straight on the table: ink in daylight, warm cream at night.
+    static let onTable = Color(UIColor { $0.userInterfaceStyle == .dark
+        ? UIColor(red: 0.95, green: 0.92, blue: 0.86, alpha: 1)
+        : UIColor(red: 0.17, green: 0.15, blue: 0.14, alpha: 1) })
+    static let onTableSoft = Color(UIColor { $0.userInterfaceStyle == .dark
+        ? UIColor(red: 0.95, green: 0.92, blue: 0.86, alpha: 0.74)
+        : UIColor(red: 0.17, green: 0.15, blue: 0.14, alpha: 0.78) })
     static let terracotta = Color(red: 0.80, green: 0.36, blue: 0.27)
     static let sea = Color(red: 0.20, green: 0.42, blue: 0.55)
     static let olive = Color(red: 0.45, green: 0.48, blue: 0.27)

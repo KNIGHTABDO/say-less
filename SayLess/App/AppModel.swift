@@ -142,6 +142,14 @@ final class AppModel {
         }
     }
 
+    /// Progress across every pack that is downloading right now, weighted by size.
+    var overallProgress: Double {
+        let busy = packs.filter { $0.value.progress != nil }
+        let total = busy.keys.reduce(0) { $0 + packBytes($1) }
+        guard total > 0 else { return 0 }
+        return busy.reduce(0) { $0 + packBytes($1.key) * ($1.value.progress ?? 0) } / total
+    }
+
     private var meters: [PackInstaller.Pack: (time: Date, fraction: Double)] = [:]
 
     private func record(_ pack: PackInstaller.Pack, _ p: Double) {

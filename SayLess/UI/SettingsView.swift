@@ -188,7 +188,8 @@ struct SettingsView: View {
                 }
                 Spacer()
                 if let p = state.progress {
-                    Text("\(Int(p * 100))%").monospacedDigit().foregroundStyle(.secondary)
+                    Text("\(Int(p * 100))%" + (state.mbps.map { $0 >= 0.5 ? " · \(Int($0.rounded())) MB/s" : "" } ?? ""))
+                        .monospacedDigit().foregroundStyle(.secondary)
                 } else if state.installed {
                     Text(ByteCountFormatter.string(fromByteCount: sizes[pack] ?? 0, countStyle: .file))
                         .foregroundStyle(.secondary)

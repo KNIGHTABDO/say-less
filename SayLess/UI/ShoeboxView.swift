@@ -53,7 +53,7 @@ struct ShoeboxView: View {
         HStack(alignment: .top, spacing: 12) {
             StampView(language: card.fromLanguage, size: 30)
             VStack(alignment: .leading, spacing: 4) {
-                Text(card.translated).font(Fonts.card(17)).foregroundStyle(Palette.ink).lineLimit(3)
+                Text(card.translated).font(Fonts.card(17)).foregroundStyle(.primary).lineLimit(3)
                 Text(card.original).font(.footnote.italic()).foregroundStyle(.secondary).lineLimit(2)
             }
             Spacer(minLength: 0)

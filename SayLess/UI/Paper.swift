@@ -24,17 +24,18 @@ struct LinenTable: View {
             Canvas(rendersAsynchronously: true) { ctx, size in
                 var rng = SeededRandom(7)
                 let threadColor = scheme == .dark ? Color.white : Color(red: 0.45, green: 0.36, blue: 0.25)
+                let k = scheme == .dark ? 0.35 : 1.0   // near-flat at night: the weave is a whisper
                 // Weft and warp: thin uneven threads.
                 var y: CGFloat = 0
                 while y < size.height {
-                    let a = Double.random(in: 0.02...0.07, using: &rng)
+                    let a = Double.random(in: 0.02...0.07, using: &rng) * k
                     let h = CGFloat.random(in: 0.6...1.6, using: &rng)
                     ctx.fill(Path(CGRect(x: 0, y: y, width: size.width, height: h)), with: .color(threadColor.opacity(a)))
                     y += CGFloat.random(in: 2.2...3.6, using: &rng)
                 }
                 var x: CGFloat = 0
                 while x < size.width {
-                    let a = Double.random(in: 0.015...0.05, using: &rng)
+                    let a = Double.random(in: 0.015...0.05, using: &rng) * k
                     let w = CGFloat.random(in: 0.6...1.4, using: &rng)
                     ctx.fill(Path(CGRect(x: x, y: 0, width: w, height: size.height)), with: .color(threadColor.opacity(a)))
                     x += CGFloat.random(in: 2.4...3.8, using: &rng)
@@ -45,14 +46,15 @@ struct LinenTable: View {
                     let len = CGFloat.random(in: 4...14, using: &rng)
                     let horizontal = Bool.random(using: &rng)
                     let r = horizontal ? CGRect(x: p.x, y: p.y, width: len, height: 1.2) : CGRect(x: p.x, y: p.y, width: 1.2, height: len)
-                    ctx.fill(Path(roundedRect: r, cornerRadius: 0.6), with: .color(threadColor.opacity(.random(in: 0.04...0.1, using: &rng))))
+                    ctx.fill(Path(roundedRect: r, cornerRadius: 0.6), with: .color(threadColor.opacity(.random(in: 0.04...0.1, using: &rng) * k)))
                 }
             }
             // Daylight from the top left, vignette at the edges.
-            RadialGradient(colors: [.white.opacity(scheme == .dark ? 0.06 : 0.22), .clear],
-                           center: UnitPoint(x: 0.2, y: 0.15), startRadius: 0, endRadius: 520)
-            RadialGradient(colors: [.clear, Palette.tableShade(scheme).opacity(0.55)],
-                           center: .center, startRadius: 260, endRadius: 720)
+            // Daylight from the top left in light mode; a warm lamp in the middle at night.
+            RadialGradient(colors: [scheme == .dark ? Color(red: 1, green: 0.85, blue: 0.6).opacity(0.05) : .white.opacity(0.22), .clear],
+                           center: scheme == .dark ? .center : UnitPoint(x: 0.2, y: 0.15), startRadius: 0, endRadius: 520)
+            RadialGradient(colors: [.clear, Palette.tableShade(scheme).opacity(scheme == .dark ? 0.7 : 0.55)],
+                           center: .center, startRadius: 300, endRadius: 760)
         }
         .drawingGroup()
         .ignoresSafeArea()
@@ -130,14 +132,22 @@ struct StampView: View {
             RoundedRectangle(cornerRadius: 2)
                 .fill(color.gradient)
                 .padding(size * 0.1)
-            VStack(spacing: 1) {
-                Text(language.nativeName)
-                    .font(.system(size: size * 0.2, weight: .bold, design: .serif))
-                    .minimumScaleFactor(0.4)
-                    .lineLimit(1)
+            if size < 40 {
+                // Too small for a name: colour and code only.
                 Text(language.code.uppercased())
-                    .font(.system(size: size * 0.12, weight: .heavy, design: .rounded))
-                    .opacity(0.75)
+                    .font(.system(size: size * 0.34, weight: .heavy, design: .rounded))
+                    .minimumScaleFactor(0.5)
+                    .lineLimit(1)
+            } else {
+                VStack(spacing: 1) {
+                    Text(language.nativeName)
+                        .font(.system(size: size * 0.2, weight: .bold, design: .serif))
+                        .minimumScaleFactor(0.4)
+                        .lineLimit(1)
+                    Text(language.code.uppercased())
+                        .font(.system(size: size * 0.12, weight: .heavy, design: .rounded))
+                        .opacity(0.75)
+                }
             }
             .foregroundStyle(.white)
             .padding(size * 0.16)
