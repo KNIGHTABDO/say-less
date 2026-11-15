@@ -65,5 +65,5 @@ jobs:
           MODELS=$(ls ~/models/*.gguf 2>/dev/null | sort -r)   # Hy-MT2 before HY-MT1.5
           rc=0
           .build/release/smoke /tmp/q.wav $MODELS > smoke.log 2>&1 || rc=$?
-          grep -vE "^(llama_|load|print_info|ggml_|graph_|sched_|common_|\.+$)" smoke.log | head -200
+          grep -E "^(===|loaded|template|self-test|  en→|downloaded|transcript|pipeline|SMOKE|FAIL|::error)" smoke.log || tail -40 smoke.log
           exit $rc
