@@ -1,0 +1,90 @@
+# Simulator screenshots of every screen (light + dark), so UI changes are seen before a tag.
+# The official llama.xcframework has no simulator slice, so we build one (cached per llama tag)
+# and point the package at it for this job only. Release builds keep the official framework.
+name: Screens
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md', 'research/**', 'design/**', 'docs/**']
+  workflow_dispatch:
+
+concurrency:
+  group: screens-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  LLAMA_TAG: b12424
+
+jobs:
+  screens:
+    runs-on: macos-26
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select newest Xcode
+        run: |
+          XC=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          [ -n "$XC" ] && sudo xcode-select -s "$XC"
+          xcodebuild -version | head -1
+
+      - uses: actions/cache@v4
+        id: llama
+        with:
+          path: llama-sim/llama.xcframework
+          key: llama-xcf-sim-dev-${{ env.LLAMA_TAG }}-v1
+
+      - name: Build llama.xcframework (simulator + device)
+        if: steps.llama.outputs.cache-hit != 'true'
+        run: |
+          git clone -q --depth 1 --branch "$LLAMA_TAG" https://github.com/ggml-org/llama.cpp llama-src
+          cd llama-src
+          ./build-xcframework.sh ios-sim ios-device > ../xcf.log 2>&1 || { tail -40 ../xcf.log; exit 1; }
+          mkdir -p ../llama-sim && cp -R build-apple/llama.xcframework ../llama-sim/
+          ls ../llama-sim/llama.xcframework
+
+      - name: Use local framework
+        run: |
+          cp -R llama-sim/llama.xcframework Packages/SayLessEngine/llama.xcframework
+          python3 - <<'EOF'
+          import re
+          p = 'Packages/SayLessEngine/Package.swift'
+          s = open(p).read()
+          s = re.sub(r'url: "[^"]*llama[^"]*xcframework\.zip",\s*checksum: "[0-9a-f]+"', 'path: "llama.xcframework"', s)
+          open(p, 'w').write(s)
+          EOF
+          grep -n 'path: "llama' Packages/SayLessEngine/Package.swift
+
+      - name: Generate project
+        run: |
+          brew install xcodegen >/dev/null
+          xcodegen generate
+
+      - uses: actions/cache@v4
+        with:
+          path: build/SourcePackages
+          key: spm-sim-${{ hashFiles('project.yml', 'Packages/SayLessEngine/Package.swift') }}
+
+      - name: Build for simulator
+        run: |
+          set -o pipefail
+          xcodebuild -project SayLess.xcodeproj -scheme SayLess -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' ARCHS=arm64 \
+            -derivedDataPath build/dd -clonedSourcePackagesDirPath build/SourcePackages \
+            -skipPackagePluginValidation -skipMacroValidation \
+            CODE_SIGNING_ALLOWED=NO build > build.log 2>&1 \
+            || { grep -E "error:|fatal error" build.log | sort -u | head -60; tail -20 build.log; exit 1; }
+          echo "BUILD OK"
+
+      - name: Screenshots
+        env:
+          SHOT_SCREENS: onboarding home empty typing rack settings
+        run: bash scripts/screens.sh build/dd/Build/Products/Debug-iphonesimulator/SayLess.app screens
+
+      - uses: actions/upload-artifact@v4
+        if: always() && hashFiles('screens/*.png') != ''
+        with:
+          name: screens
+          path: screens/
+          retention-days: 5
