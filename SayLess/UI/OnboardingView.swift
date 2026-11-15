@@ -29,10 +29,35 @@ struct OnboardingView: View {
                 .padding(.horizontal, 22)
                 .padding(.bottom, 12)
         }
+        .background(alignment: .top) { hero }
         .task { await write() }
         .onChange(of: model.packs[.translation]?.installed) { _, installed in
             if installed == true, step == .packing { Task { await firstTranslation() } }
         }
+    }
+
+    // MARK: The painting behind the card
+
+    @Environment(\.colorScheme) private var scheme
+    @State private var drift = false
+
+    /// A painted coastline at the top of the table that fades into the linen. It drifts slowly while you write.
+    private var hero: some View {
+        Image("OnboardingHero")
+            .resizable()
+            .scaledToFill()
+            .frame(height: 420)
+            .scaleEffect(drift ? 1.06 : 1, anchor: .center)
+            .offset(y: drift ? -6 : 0)
+            .clipped()
+            .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.55),
+                                         .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
+            .opacity(scheme == .dark ? 0.55 : 0.95)
+            .saturation(scheme == .dark ? 0.7 : 1)
+            .ignoresSafeArea(edges: .top)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .onAppear { withAnimation(.easeInOut(duration: 14).repeatForever(autoreverses: true)) { drift = true } }
     }
 
     // MARK: The postcard
@@ -115,7 +140,7 @@ struct OnboardingView: View {
                 .foregroundStyle(Palette.ink)
             if first.isEmpty {
                 PackTags()
-                Text("About 2 GB, downloaded once. Everything stays on this phone. Wi‑Fi is best.")
+                Text("About 2.8 GB, downloaded once. Everything stays on this phone. Wi‑Fi is best.")
                     .font(.system(size: 13, design: .serif).italic())
                     .foregroundStyle(Palette.fadedInk)
             } else {
@@ -298,7 +323,17 @@ struct PackTags: View {
 
     private func tag(_ pack: PackInstaller.Pack, _ name: String, _ detail: String) -> some View {
         let state = model.packs[pack] ?? PackState()
-        return HStack(spacing: 12) {
+        return Button {
+            guard state.error != nil, !state.installed else { return }
+            Haptics.move()
+            Task { await model.install(pack) }
+        } label: { tagRow(state, name, detail) }
+        .buttonStyle(.plain)
+        .disabled(state.error == nil || state.installed)
+    }
+
+    private func tagRow(_ state: PackState, _ name: String, _ detail: String) -> some View {
+        HStack(spacing: 12) {
             Image(systemName: state.installed ? "checkmark.seal.fill" : state.error != nil ? "exclamationmark.triangle" : "shippingbox")
                 .foregroundStyle(state.installed ? Palette.olive : state.error != nil ? Palette.terracotta : Palette.fadedInk)
                 .frame(width: 22)
@@ -307,7 +342,7 @@ struct PackTags: View {
                 HStack {
                     Text(name).font(Fonts.label(15)).foregroundStyle(Palette.ink)
                     Spacer()
-                    Text(state.installed ? "packed" : state.progress.map { "\(Int($0 * 100))%" } ?? (state.error != nil ? "retry in Settings" : "waiting"))
+                    Text(state.installed ? "packed" : state.progress.map { "\(Int($0 * 100))%" } ?? (state.error != nil ? "tap to retry" : "waiting"))
                         .font(Fonts.label(12))
                         .foregroundStyle(Palette.fadedInk)
                         .monospacedDigit()

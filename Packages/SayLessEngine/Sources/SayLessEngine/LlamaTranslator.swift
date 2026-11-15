@@ -53,16 +53,32 @@ public final class LlamaTranslator: @unchecked Sendable {
         return llama_print_system_info().map { String(cString: $0) } ?? "?"
     }
 
+    /// Overrides for speed experiments (CI bisect). nil = the app's normal choice.
+    public struct Tuning: Sendable {
+        public var threads: Int32?
+        /// Use llama's default model/context params except threads and context size.
+        public var plainDefaults = false
+        public var contextLength: Int32 = 1024
+        public init(threads: Int32? = nil, plainDefaults: Bool = false, contextLength: Int32 = 1024) {
+            self.threads = threads; self.plainDefaults = plainDefaults; self.contextLength = contextLength
+        }
+    }
+
+    public convenience init(modelPath: String, gpu: Bool, greedy: Bool = false, contextLength: Int32 = 1024) throws {
+        try self.init(modelPath: modelPath, gpu: gpu, greedy: greedy, tuning: Tuning(contextLength: contextLength))
+    }
+
     /// - Parameters:
     ///   - gpu: offload layers to Metal (off on simulators / CI VMs).
     ///   - greedy: deterministic decoding (CI); otherwise Tencent's recommended sampling.
-    public init(modelPath: String, gpu: Bool, greedy: Bool = false, contextLength: Int32 = 1024) throws {
+    public init(modelPath: String, gpu: Bool, greedy: Bool = false, tuning: Tuning) throws {
+        let contextLength = tuning.contextLength
         _ = Self.backendOnce
         self.modelPath = modelPath
         self.greedy = greedy
         var mp = llama_model_default_params()
         mp.n_gpu_layers = gpu ? 99 : 0
-        mp.load_mode = LLAMA_LOAD_MODE_MMAP
+        if !tuning.plainDefaults { mp.load_mode = LLAMA_LOAD_MODE_MMAP }
         guard let m = llama_model_load_from_file(modelPath, mp) else {
             throw EngineError.loadFailed((modelPath as NSString).lastPathComponent)
         }
@@ -70,10 +86,10 @@ public final class LlamaTranslator: @unchecked Sendable {
         var cp = llama_context_default_params()
         cp.n_ctx = UInt32(contextLength)
         cp.n_batch = UInt32(contextLength)
-        let threads = Int32(max(2, min(6, ProcessInfo.processInfo.activeProcessorCount - 1)))
+        let threads = tuning.threads ?? Int32(max(2, min(6, ProcessInfo.processInfo.activeProcessorCount - 1)))
         cp.n_threads = threads
         cp.n_threads_batch = threads
-        if !gpu {
+        if !gpu && !tuning.plainDefaults {
             // Keep everything on the CPU: by default the KV cache and big host ops still go to Metal.
             cp.offload_kqv = false
             cp.op_offload = false

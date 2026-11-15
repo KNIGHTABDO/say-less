@@ -65,7 +65,7 @@ jobs:
           MODELS=$(ls ~/models/*.gguf 2>/dev/null | sort -r)   # Hy-MT2 before HY-MT1.5
           rc=0
           .build/release/smoke /tmp/q.wav $MODELS > smoke.log 2>&1 || rc=$?
-          grep -E "^(===|loaded|template|self-test|  en→|downloaded|transcript|pipeline|SMOKE|FAIL|::error)" smoke.log || tail -40 smoke.log
+          grep -E "^(===|loaded|template|self-test|  en→|bisect|downloaded|transcript|pipeline|SMOKE|FAIL|::error)" smoke.log || tail -40 smoke.log
           exit $rc
 
       - name: Reference speed (llama-bench, same runner)
@@ -77,5 +77,5 @@ jobs:
           mkdir -p /tmp/lb && tar -xzf /tmp/lb.tgz -C /tmp/lb
           BENCH=$(find /tmp/lb -name llama-bench -type f | head -1)
           M=$(ls ~/models/Hy-MT2*.gguf | head -1)
-          for t in 2 3; do "$BENCH" -m "$M" -p 37 -n 20 -t $t -ngl 0 -r 2 -o md 2>/dev/null | grep -E "^\|" ; done
+          "$BENCH" --version 2>&1 | tail -2; for t in 2 3; do "$BENCH" -m "$M" -p 37 -n 20 -t $t -ngl 0 -r 2 -o md 2>/dev/null | grep -E "^\|" ; done
           "$BENCH" -m "$M" -p 37 -n 20 -ngl 99 -r 2 -o md 2>/dev/null | grep -E "^\|" || echo "GPU bench failed"

@@ -114,7 +114,10 @@ struct DiagnosticsView: View {
         defer { busy = false }
         do {
             let out = try await model.engine.translate(input, to: lang)
+            let pp = out.promptMs > 0 ? Double(out.promptTokens) * 1000 / Double(out.promptMs) : 0
             result = "\(out.text)\n\n\(out.tokens) tokens · \(out.ms) ms · \(String(format: "%.1f", out.tokensPerSecond)) tok/s"
+                + "\nprompt \(out.promptTokens) tok in \(out.promptMs) ms (\(String(format: "%.1f", pp)) t/s) · gen \(String(format: "%.1f", out.genTokensPerSecond)) t/s"
+                + "\ngpu \(model.engine.useGPU ? "on" : "off") · \(LlamaTranslator.systemInfo)"
         } catch {
             result = "Failed: \(error.localizedDescription)"
         }

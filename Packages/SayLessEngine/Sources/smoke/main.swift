@@ -37,6 +37,27 @@ struct Smoke {
         }
         if working == nil { print("::error::no translation model passed"); failed = true }
 
+        // Speed bisect: one sentence per config on the first model (llama-bench gets ~84 pp / ~33 tg t/s here).
+        if let path = ggufs.first {
+            let configs: [(String, LlamaTranslator.Tuning)] = [
+                ("plain t2 ctx1024", .init(threads: 2, plainDefaults: true)),
+                ("plain t2 ctx128", .init(threads: 2, plainDefaults: true, contextLength: 128)),
+                ("app t1", .init(threads: 1)),
+                ("app t3", .init(threads: 3)),
+            ]
+            for (name, tuning) in configs {
+                do {
+                    let t = try LlamaTranslator(modelPath: path, gpu: false, greedy: true, tuning: tuning)
+                    _ = try t.translate("Hello.", to: Language.named("fr")!, maxTokens: 4)   // warm-up
+                    let r = try t.translate("Excuse me, how much is a ticket to the old town?", to: Language.named("fr")!, maxTokens: 32)
+                    let pp = r.promptMs > 0 ? Double(r.promptTokens) * 1000 / Double(r.promptMs) : 0
+                    print("bisect \(name): pp \(String(format: "%.1f", pp)) t/s, tg \(String(format: "%.1f", r.genTokensPerSecond)) t/s")
+                } catch {
+                    print("bisect \(name): FAIL \(error.localizedDescription)")
+                }
+            }
+        }
+
         let variant = ProcessInfo.processInfo.environment["WHISPER_VARIANT"] ?? "openai_whisper-base"
         print("=== STT \(variant)")
         do {

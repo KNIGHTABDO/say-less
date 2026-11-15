@@ -24,7 +24,7 @@ public actor Engine {
     /// Safety margin kept free on top of a model's resident size.
     public var marginMB = 350
 
-    private let useGPU: Bool
+    public nonisolated let useGPU: Bool
 
     public init(registry: ModelRegistry = .bundled) {
         self.registry = registry
