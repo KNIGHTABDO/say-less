@@ -1,65 +1,70 @@
 import SwiftUI
+import UIKit
 import SayLessEngine
 
 @main
 struct SayLessApp: App {
+    @State private var model = AppModel()
+    @State private var updates = Updates()
+
     var body: some Scene {
-        WindowGroup { BenchView() }
+        WindowGroup {
+            RootView()
+                .environment(model)
+                .environment(updates)
+                .preferredColorScheme(model.appearance == 1 ? .light : model.appearance == 2 ? .dark : nil)
+                .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+                    model.memoryWarning()
+                }
+                .task { await updates.checkIfDue() }
+        }
     }
 }
 
-/// First-build bench: installs the packs and runs typed text through the translator,
-/// so the models can be checked on the iPhone before the Postcards UI lands.
-struct BenchView: View {
-    @State private var engine = Engine()
-    @State private var log: [String] = []
-    @State private var progress: Double = 0
-    @State private var busy = false
-    @State private var input = "Where is the train station?"
-    @State private var target = "es"
+/// The linen table, with either the first postcard or the conversation on it.
+struct RootView: View {
+    @Environment(AppModel.self) private var model
+    @Environment(Updates.self) private var updates
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
-        NavigationStack {
-            List {
-                Section("Packs") {
-                    Button("Install translation (~1.1 GB)") { run { try await PackInstaller.installTranslation(gpu: true, progress: setProgress, status: say) } }
-                    Button("Install speech (~630 MB)") { run { try await PackInstaller.installSpeech(progress: setProgress) } }
-                    Button("Install voice (~1 GB)") { run { try await PackInstaller.installVoice(progress: setProgress) } }
-                    if busy { ProgressView(value: progress) }
-                }
-                Section("Translate") {
-                    TextField("Text", text: $input, axis: .vertical)
-                    Picker("To", selection: $target) {
-                        ForEach(Language.all, id: \.code) { Text($0.nativeName).tag($0.code) }
-                    }
-                    Button("Translate") {
-                        run {
-                            let lang = Language.named(target)!
-                            let out = try await engine.translate(input, to: lang)
-                            say("\(out.text)  · \(out.ms) ms, \(String(format: "%.1f", out.tokensPerSecond)) tok/s")
-                        }
-                    }
-                }
-                Section("Log") {
-                    ForEach(Array(log.enumerated().reversed()), id: \.offset) { Text($0.element).font(.footnote.monospaced()) }
-                    Text("Free memory: \(MemoryProbe.availableMB()) MB").font(.footnote)
-                }
+        @Bindable var model = model
+        ZStack {
+            LinenTable().ignoresSafeArea()
+            if model.onboarded {
+                ConversationView()
+                    .transition(.asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity), removal: .opacity))
+            } else {
+                OnboardingView()
+                    .transition(.asymmetric(insertion: .opacity, removal: .move(edge: .top).combined(with: .opacity)))
             }
-            .navigationTitle("Say Less")
-            .onAppear {
-                if let stage = Breadcrumbs.unfinishedStage() { say("Last run stopped during \(stage)") }
+        }
+        .animation(.settle, value: model.onboarded)
+        .alert("Sorry about that", isPresented: Binding(get: { model.crashNote != nil }, set: { if !$0 { model.crashNote = nil } })) {
+            Button("OK") { model.crashNote = nil }
+        } message: {
+            Text(model.crashNote ?? "")
+        }
+        .overlay(alignment: .top) {
+            if model.onboarded, updates.isNewer, let tag = updates.latest?.tag_name, !dismissedUpdate {
+                Button {
+                    if let url = updates.installURL { openURL(url) }
+                } label: {
+                    Label("Say Less \(tag) is out", systemImage: "arrow.down.circle.fill")
+                        .font(Fonts.label(14))
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                }
+                .buttonStyle(.glass)
+                .padding(.top, 6)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .task {
+                    try? await Task.sleep(for: .seconds(8))
+                    withAnimation { dismissedUpdate = true }
+                }
             }
         }
     }
 
-    private func say(_ s: String) { Task { @MainActor in log.append(s) } }
-    private func setProgress(_ p: Double) { Task { @MainActor in progress = p } }
-
-    private func run(_ work: @escaping () async throws -> Void) {
-        busy = true; progress = 0
-        Task {
-            do { try await work() } catch { say("Error: \(error.localizedDescription)") }
-            busy = false
-        }
-    }
+    @State private var dismissedUpdate = false
 }
