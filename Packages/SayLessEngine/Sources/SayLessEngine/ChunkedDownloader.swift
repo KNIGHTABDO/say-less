@@ -94,6 +94,8 @@ public final class ChunkedDownloader: NSObject, URLSessionDataDelegate, @uncheck
             try await withTaskCancellationHandler {
                 try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
                     queue.addOperation {
+                        // Cancelled before we started: finish() already ran with no continuation to resume.
+                        if self.finished { c.resume(throwing: CancellationError()); return }
                         self.continuation = c
                         if self.pending.isEmpty { self.finish(nil); return }
                         for w in 0..<n { self.startNext(worker: w) }

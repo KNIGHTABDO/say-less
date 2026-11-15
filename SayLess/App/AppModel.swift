@@ -142,12 +142,16 @@ final class AppModel {
         }
     }
 
-    /// Progress across every pack that is downloading right now, weighted by size.
+    /// Progress across all packs, weighted by size; finished packs count as done, so it never goes backwards.
     var overallProgress: Double {
-        let busy = packs.filter { $0.value.progress != nil }
-        let total = busy.keys.reduce(0) { $0 + packBytes($1) }
-        guard total > 0 else { return 0 }
-        return busy.reduce(0) { $0 + packBytes($1.key) * ($1.value.progress ?? 0) } / total
+        var total = 0.0, done = 0.0
+        for pack in PackInstaller.Pack.allCases {
+            let state = packs[pack] ?? PackState()
+            guard state.installed || state.progress != nil else { continue }
+            total += packBytes(pack)
+            done += packBytes(pack) * (state.installed ? 1 : state.progress ?? 0)
+        }
+        return total > 0 ? done / total : 0
     }
 
     private var meters: [PackInstaller.Pack: (time: Date, fraction: Double)] = [:]

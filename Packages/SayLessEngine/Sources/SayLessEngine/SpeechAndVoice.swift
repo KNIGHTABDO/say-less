@@ -86,6 +86,14 @@ public final class QwenVoice: @unchecked Sendable {
 
     public func unload() async { await kit.unloadModels() }
 
+    /// Files and bytes the voice prefetch would fetch (CI check that the kit's patterns match the repo).
+    public static func prefetchPlan() async throws -> (files: Int, bytes: Int64) {
+        let config = TTSKitConfig(model: .qwen3TTS_0_6b)
+        let patterns = config.downloadPatterns + config.downloadAdditionalPatterns
+        return try await HubPrefetch.plan(repo: config.modelRepo, endpoint: config.modelEndpoint,
+                                          include: { name in patterns.contains { globMatch($0, name) } })
+    }
+
     public static func download(progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
         let config = TTSKitConfig(model: .qwen3TTS_0_6b)
         let patterns = config.downloadPatterns + config.downloadAdditionalPatterns

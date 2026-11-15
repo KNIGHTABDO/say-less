@@ -20,6 +20,16 @@ public enum HubPrefetch {
     /// Big files get a multi-connection download each; small ones go several at a time.
     static let bigFile: Int64 = 24 << 20
 
+    /// What a fetch would download (files, bytes), without downloading. For CI checks.
+    public static func plan(repo: String, endpoint: String = "https://huggingface.co",
+                            include: (String) -> Bool) async throws -> (files: Int, bytes: Int64) {
+        let api = URL(string: "\(endpoint)/api/models/\(repo)/revision/main?blobs=true")!
+        let (data, _) = try await URLSession.shared.data(from: api)
+        let rev = try JSONDecoder().decode(Revision.self, from: data)
+        let files = rev.siblings.filter { include($0.rfilename) && ($0.size ?? 0) > 0 }
+        return (files.count, files.reduce(0) { $0 + ($1.size ?? 0) })
+    }
+
     public static func fetch(repo: String, endpoint: String = "https://huggingface.co", base: URL,
                              include: @Sendable (String) -> Bool,
                              progress: @escaping @Sendable (Double) -> Void) async throws {
@@ -39,7 +49,7 @@ public enum HubPrefetch {
         for f in files {
             let dest = root.appending(path: f.rfilename)
             let meta = metaRoot.appending(path: f.rfilename + ".metadata")
-            if isCurrent(dest: dest, meta: meta, size: f.size ?? -1, commit: rev.sha) {
+            if isCurrent(dest: dest, meta: meta, size: f.size ?? -1, commit: rev.sha, etag: f.lfs?.sha256 ?? f.blobId) {
                 meter.set(f.rfilename, f.size ?? 0)
                 continue
             }
@@ -52,6 +62,10 @@ public enum HubPrefetch {
             try FileManager.default.createDirectory(at: meta.deletingLastPathComponent(), withIntermediateDirectories: true)
             let etag = f.lfs?.sha256 ?? f.blobId ?? ""
             try "\(rev.sha)\n\(etag)\n\(Date().timeIntervalSince1970)\n".write(to: meta, atomically: true, encoding: .utf8)
+        }
+        // Files kept from an older commit get fresh metadata so the kit sees them as current.
+        for f in files where !big.contains(where: { $0.rfilename == f.rfilename }) && !small.contains(where: { $0.rfilename == f.rfilename }) {
+            try? finished(f)
         }
 
         try await withThrowingTaskGroup(of: Void.self) { group in
@@ -111,10 +125,14 @@ public enum HubPrefetch {
         throw lastError ?? EngineError.failed("download failed: \(f.rfilename)")
     }
 
-    private static func isCurrent(dest: URL, meta: URL, size: Int64, commit: String) -> Bool {
+    /// Same file already here: same commit, or (after a new commit upstream) the same etag.
+    private static func isCurrent(dest: URL, meta: URL, size: Int64, commit: String, etag: String?) -> Bool {
         guard let s = try? dest.resourceValues(forKeys: [.fileSizeKey]).fileSize, Int64(s) == size,
               let m = try? String(contentsOf: meta, encoding: .utf8) else { return false }
-        return m.split(separator: "\n").first.map(String.init) == commit
+        let lines = m.split(separator: "\n").map(String.init)
+        if lines.first == commit { return true }
+        if let etag, !etag.isEmpty, lines.count > 1, lines[1] == etag { return true }
+        return false
     }
 
     /// Sums bytes across files and reports overall progress.

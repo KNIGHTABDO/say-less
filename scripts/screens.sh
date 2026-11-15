@@ -12,6 +12,8 @@ d=json.load(sys.stdin)['devices']
 c=[x for k,v in d.items() if 'iOS' in k for x in v if 'Pro Max' in x['name']]
 c.sort(key=lambda x:x['name']); print(c[-1]['udid'] if c else '')")
 [ -z "$UDID" ] && { echo "no simulator"; exit 0; }
+# Software keyboard on, so the typing screen shows the real keyboard over the app.
+defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false 2>/dev/null
 xcrun simctl boot "$UDID" 2>/dev/null; xcrun simctl bootstatus "$UDID" -b >/dev/null
 xcrun simctl status_bar "$UDID" override --time 9:41 --batteryState charged --batteryLevel 100 --wifiBars 3 2>/dev/null
 xcrun simctl install "$UDID" "$APP"

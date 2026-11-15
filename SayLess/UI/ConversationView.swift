@@ -24,6 +24,7 @@ struct ConversationView: View {
                 }
                 .ignoresSafeArea()   // the table never squeezes for the keyboard; the composer rises instead
             }
+            .ignoresSafeArea(.keyboard)
 
             if let side = typingSide {
                 // Tap anywhere on the table to put the keyboard away.
@@ -44,6 +45,10 @@ struct ConversationView: View {
             }
         }
         .animation(.card, value: typingSide)
+        .onChange(of: typingSide) { old, new in
+            // Each person gets their own composer: don't show one side's unsent words to the other.
+            if let old, let new, old != new { draft = "" }
+        }
         .sheet(item: $rackSide) { side in
             RackView(side: side)
         }
@@ -124,7 +129,11 @@ struct Composer: View {
         }
         .padding(18)
         .cardStock(seed: 77, lifted: true)
-        .onAppear { focused = true }
+        .task {
+            // Focus after the slide-in settles; focusing mid-transition is often ignored.
+            try? await Task.sleep(for: .milliseconds(150))
+            focused = true
+        }
     }
 }
 

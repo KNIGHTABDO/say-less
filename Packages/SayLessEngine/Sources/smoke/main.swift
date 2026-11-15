@@ -93,6 +93,17 @@ struct Smoke {
             try? FileManager.default.removeItem(at: dest)
         }
 
+        // Voice prefetch must match the kit's own file patterns (else it silently helps nothing).
+        do {
+            let plan = try await QwenVoice.prefetchPlan()
+            print("voice prefetch plan: \(plan.files) files, \(plan.bytes / 1_000_000) MB")
+            if plan.files == 0 || plan.bytes < 400_000_000 || plan.bytes > 3_000_000_000 {
+                print("::error::voice prefetch patterns look wrong (\(plan.files) files, \(plan.bytes) B)"); failed = true
+            }
+        } catch {
+            print("::error::voice prefetch plan failed: \(error)"); failed = true
+        }
+
         let variant = ProcessInfo.processInfo.environment["WHISPER_VARIANT"] ?? "openai_whisper-base"
         print("=== STT \(variant)")
         do {
